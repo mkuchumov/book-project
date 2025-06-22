@@ -22,7 +22,7 @@ class Book extends \yii\db\ActiveRecord
     /**
      * @var array|int[] $authorIds ID авторов для формы
      */
-    public $authorIds;
+    public $authorIds = [];
 
     /**
      * @var UploadedFile|null Загружаемое изображение обложки
@@ -125,18 +125,51 @@ class Book extends \yii\db\ActiveRecord
 
         $this->uploadCoverImage();
 
-        if (!$this->isNewRecord) {
-            BookAuthor::deleteAll(['book_id' => $this->id]);
-        }
-
+        // Сохраняем саму книгу
         if (!parent::save($runValidation, $attributeNames)) {
             return false;
         }
 
-        foreach ($this->authorIds as $authorId) {
+        // Если это новый объект — сохраняем связи после создания
+        if ($this->isNewRecord) {
+            foreach ($this->authorIds as $authorId) {
+                $bookAuthor = new BookAuthor();
+                $bookAuthor->book_id = $this->id;
+                $bookAuthor->author_id = $authorId;
+
+                if (!$bookAuthor->save()) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // Получаем текущие связи из БД
+        $existingRelations = BookAuthor::find()
+            ->where(['book_id' => $this->id])
+            ->indexBy('author_id')
+            ->all();
+
+        $existingAuthorIds = array_keys($existingRelations);
+
+        // Разбиваем на добавление и удаление
+        $toAdd = array_diff($this->authorIds, $existingAuthorIds);
+        $toDelete = array_diff($existingAuthorIds, $this->authorIds);
+
+        // Удаление лишних связей
+        if (!empty($toDelete)) {
+            BookAuthor::deleteAll([
+                'book_id' => $this->id,
+                'author_id' => $toDelete,
+            ]);
+        }
+
+        // Добавление новых связей
+        foreach ($toAdd as $authorId) {
             $bookAuthor = new BookAuthor();
             $bookAuthor->book_id = $this->id;
             $bookAuthor->author_id = $authorId;
+
             if (!$bookAuthor->save()) {
                 return false;
             }
@@ -152,7 +185,11 @@ class Book extends \yii\db\ActiveRecord
      */
     public function getAuthorIds()
     {
-        return $this->getAuthors()->select('id')->column();
+        if ($this->authorIds === []) {
+            return $this->getAuthors()->select('id')->column();
+        }
+
+        return $this->authorIds;
     }
 
     /**
@@ -162,6 +199,6 @@ class Book extends \yii\db\ActiveRecord
      */
     public function setAuthorIds($value)
     {
-        $this->_authorIds = is_array($value) ? array_map('intval', $value) : [];
+        $this->authorIds = is_array($value) ? array_map('intval', $value) : [];
     }
 }
