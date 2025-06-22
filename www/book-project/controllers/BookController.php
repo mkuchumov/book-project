@@ -76,6 +76,7 @@ class BookController extends Controller
             $model->authorIds = Yii::$app->request->post('Book')['authorIds'];
 
             if ($model->validate()) {
+                // необходимо выполнить save отдельно, после validate, для правильного сохранения изображения
                 if ($model->save(false)) {
 
                     // Уведомление подписчиков через сервис
