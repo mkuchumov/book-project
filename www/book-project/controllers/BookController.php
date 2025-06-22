@@ -4,7 +4,7 @@ namespace app\controllers;
 
 use app\models\Book;
 use app\models\BookSearch;
-use app\models\Subscription;
+use app\services\BookNotifier;
 use Yii;
 use yii\filters\VerbFilter;
 use yii\web\Controller;
@@ -69,6 +69,7 @@ class BookController extends Controller
     public function actionCreate()
     {
         $model = new Book();
+        $notifier = new BookNotifier();
 
         if ($model->load(Yii::$app->request->post())) {
             $model->coverImageFile = UploadedFile::getInstance($model, 'coverImageFile');
@@ -77,19 +78,8 @@ class BookController extends Controller
             if ($model->validate()) {
                 if ($model->save(false)) {
 
-                    // Уведомление подписчиков
-                    foreach ($model->authors as $author) {
-                        $subs = Subscription::find()
-                            ->where(['author_id' => $author->id])
-                            ->all();
-
-                        foreach ($subs as $sub) {
-                            Yii::$app->smsSender->send(
-                                $sub->guest_phone,
-                                "Новая книга от {$author->name}: {$model->title}"
-                            );
-                        }
-                    }
+                    // Уведомление подписчиков через сервис
+                    $notifier->notifySubscribersAboutNewBook($model);
 
                     return $this->redirect(['view', 'id' => $model->id]);
                 }
