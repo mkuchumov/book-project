@@ -2,44 +2,55 @@
 
 namespace app\controllers;
 
+use app\models\Author;
+use app\models\Book;
+use app\models\BookAuthor;
 use Yii;
 use yii\data\ArrayDataProvider;
 use yii\web\Controller;
 
 /**
- * ReportController
+ * ReportController отвечает за генерацию отчётов
  */
 class ReportController extends Controller
 {
     /**
-     * @return string
-     * @throws \yii\db\Exception
+     * Экшн выводит список топ-10 авторов по количеству книг за указанный год.
+     *
+     * @return mixed
      */
     public function actionTopAuthors()
     {
-        $year = Yii::$app->request->get('year', date('Y'));
+        $year = $this->validateYear(Yii::$app->request->get('year'));
 
-        // Проверяем корректность года
-        if (!is_numeric($year) || $year < 1900 || $year > date('Y')) {
-            $year = date('Y');
-        }
-
-        $sql = "
-            SELECT a.id, a.name, COUNT(ba.book_id) AS books_count, :year AS report_year
-            FROM author a
-            JOIN book_author ba ON a.id = ba.author_id
-            JOIN book b ON ba.book_id = b.id AND b.year = :year
-            GROUP BY a.id, a.name
-            ORDER BY books_count DESC
-            LIMIT 10
-        ";
-
-        $rows = Yii::$app->db->createCommand($sql)
-            ->bindValue(':year', $year)
-            ->queryAll();
+        $authors = Author::find()
+            ->select([
+                Author::tableName() . '.id',
+                Author::tableName() . '.name',
+                'COUNT(' . BookAuthor::tableName() . '.book_id) AS books_count',
+                new \yii\db\Expression(':year AS report_year', [':year' => $year]),
+            ])
+            ->innerJoin(
+                BookAuthor::tableName(),
+                BookAuthor::tableName() . '.author_id = ' . Author::tableName() . '.id'
+            )
+            ->innerJoin(
+                Book::tableName(),
+                Book::tableName() . '.id = ' . BookAuthor::tableName() . '.book_id AND ' .
+                Book::tableName() . '.year = :year',
+                [':year' => $year]
+            )
+            ->groupBy([
+                Author::tableName() . '.id',
+                Author::tableName() . '.name',
+            ])
+            ->orderBy(['books_count' => SORT_DESC])
+            ->limit(10)
+            ->asArray()
+            ->all();
 
         $dataProvider = new ArrayDataProvider([
-            'allModels' => $rows,
+            'allModels' => $authors,
             'pagination' => false,
         ]);
 
@@ -47,5 +58,24 @@ class ReportController extends Controller
             'dataProvider' => $dataProvider,
             'year' => $year,
         ]);
+    }
+
+    /**
+     * Валидирует значение года.
+     *
+     * @param mixed $year
+     * @return int
+     */
+    private function validateYear($year): int
+    {
+        if ($year === null) {
+            return (int)date('Y');
+        }
+
+        $year = filter_var($year, FILTER_VALIDATE_INT, [
+            'options' => ['min_range' => 1900, 'max_range' => (int)date('Y')]
+        ]);
+
+        return $year ?: (int)date('Y');
     }
 }
